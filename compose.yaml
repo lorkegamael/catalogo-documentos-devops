@@ -1,0 +1,36 @@
+services:
+  api:
+    build: ./api
+    # Montaje de solo lectura: el catálogo versionado se comparte sin duplicar datos.
+    volumes:
+      - ./api/catalogo.json:/datos/catalogo.json:ro
+    environment:
+      CATALOGO_ARCHIVO: /datos/catalogo.json
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GUNICORN_CMD_ARGS: "--log-level ${LOG_LEVEL:-info}"
+    expose: ["5000"]  # Puerto interno, sin publicación en el anfitrión.
+    networks: [catalogo]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 8
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"  # Acceso solo desde el equipo local.
+    networks: [catalogo]
+    depends_on:
+      api:
+        condition: service_healthy  # Nginx inicia cuando Flask puede leer el catálogo.
+    restart: unless-stopped
+    healthcheck:
+      # Petición a Nginx que también recorre el proxy hacia api:5000.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 8
+networks:
+  catalogo:
+    driver: bridge  # Resolución DNS por nombre de servicio dentro del proyecto.
