@@ -1,0 +1,36 @@
+name: Catálogo documental
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar configuración
+        run: docker compose config --quiet
+      - name: Probar reglas del catálogo
+        run: python3 -m unittest discover -s tests -v
+      - name: Construir imágenes
+        run: docker compose build
+      - name: Levantar entorno de pruebas
+        run: docker compose up -d --wait --wait-timeout 90
+      - name: Verificar el catálogo desde Nginx
+        run: python3 tests/smoke.py
+      - name: Estado y logs
+        if: always()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color
+      - name: Simular despliegue validado
+        if: success() && github.event_name == 'push'
+        run: echo 'Despliegue simulado en main. Procedimiento local aprobado -> docker compose up -d --build --wait'
+      - name: Detener entorno
+        if: always()
+        run: docker compose down --remove-orphans
+
